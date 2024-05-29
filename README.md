@@ -3,6 +3,7 @@ Set of methods for source code decomposition.
 ___
 ## Installation
 
+0. ```$ conda env create -f environment.yaml```
 1. ```$ git clone git@github.com:acheshkov/program_slicing.git```
 2. ```$ cd program_slicing```
 3. ```$ git submodule update --recursive --init```
