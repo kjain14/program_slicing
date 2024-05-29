@@ -1,8 +1,8 @@
-__licence__ = 'MIT'
-__author__ = 'kuyaki'
-__credits__ = ['kuyaki']
-__maintainer__ = 'kuyaki'
-__date__ = '2021/03/23'
+__licence__ = "MIT"
+__author__ = "kuyaki"
+__credits__ = ["kuyaki"]
+__maintainer__ = "kuyaki"
+__date__ = "2021/03/23"
 
 from collections import defaultdict
 from typing import Dict, Optional, Set, List, Iterable
@@ -19,6 +19,8 @@ from program_slicing.graph.statement import Statement, StatementType
 from program_slicing.graph.basic_block import BasicBlock
 from program_slicing.graph import convert
 
+import matplotlib.pyplot as plt
+
 
 class ProgramGraphsManager:
 
@@ -31,7 +33,9 @@ class ProgramGraphsManager:
         self.__dom_blocks: Optional[Dict[BasicBlock, Set[BasicBlock]]] = None
         self.__reach_blocks: Optional[Dict[BasicBlock, Set[BasicBlock]]] = None
         self.__scope_dependency: Optional[Dict[Statement, Statement]] = None
-        self.__scope_dependency_backward: Optional[Dict[Statement, Set[Statement]]] = None
+        self.__scope_dependency_backward: Optional[Dict[Statement, Set[Statement]]] = (
+            None
+        )
         self.__function_dependency: Optional[Dict[Statement, Statement]] = None
         self.__statement_line_numbers: Optional[Dict[Statement, Set[int]]] = None
         self.__general_statements: Optional[Set[Statement]] = None
@@ -48,7 +52,7 @@ class ProgramGraphsManager:
             self.__build_pdg = lambda: ProgramDependenceGraph()
 
     @classmethod
-    def from_source_code(cls, source_code: str, lang: Lang) -> 'ProgramGraphsManager':
+    def from_source_code(cls, source_code: str, lang: Lang) -> "ProgramGraphsManager":
         """
         Build all the graphs by a given source code string and a language description.
         :param source_code: string with the source code.
@@ -58,7 +62,9 @@ class ProgramGraphsManager:
         return cls(source_code, lang)
 
     @classmethod
-    def from_control_dependence_graph(cls, graph: ControlDependenceGraph) -> 'ProgramGraphsManager':
+    def from_control_dependence_graph(
+        cls, graph: ControlDependenceGraph
+    ) -> "ProgramGraphsManager":
         """
         Build all the graphs by a given Control Dependence Graph.
         :param graph: Control Dependence Graph.
@@ -72,7 +78,7 @@ class ProgramGraphsManager:
         return result
 
     @classmethod
-    def from_control_flow_graph(cls, graph: ControlFlowGraph) -> 'ProgramGraphsManager':
+    def from_control_flow_graph(cls, graph: ControlFlowGraph) -> "ProgramGraphsManager":
         """
         Build all the graphs by a given Control Flow Graph.
         :param graph: Control Flow Graph.
@@ -86,7 +92,9 @@ class ProgramGraphsManager:
         return result
 
     @classmethod
-    def from_data_dependence_graph(cls, graph: DataDependenceGraph) -> 'ProgramGraphsManager':
+    def from_data_dependence_graph(
+        cls, graph: DataDependenceGraph
+    ) -> "ProgramGraphsManager":
         """
         Build all the graphs by a given Data Dependence Graph.
         :param graph: Data Dependence Graph.
@@ -100,7 +108,9 @@ class ProgramGraphsManager:
         return result
 
     @classmethod
-    def from_program_dependence_graph(cls, graph: ProgramDependenceGraph) -> 'ProgramGraphsManager':
+    def from_program_dependence_graph(
+        cls, graph: ProgramDependenceGraph
+    ) -> "ProgramGraphsManager":
         """
         Build all the graphs by a given Program Dependence Graph.
         :param graph: Program Dependence Graph.
@@ -200,11 +210,59 @@ class ProgramGraphsManager:
         """
         boundary_blocks = set()
         for basic_block in self.control_flow_graph:
-            if block in self.get_dominated_blocks(basic_block).intersection(self.get_reach_blocks(basic_block)):
+            if block in self.get_dominated_blocks(basic_block).intersection(
+                self.get_reach_blocks(basic_block)
+            ):
                 boundary_blocks.add(basic_block)
         return boundary_blocks
 
-    def get_boundary_blocks_for_statement(self, statement: Statement) -> Set[BasicBlock]:
+    def get_affecting_statements_full(
+        self, statements: Set[Statement]
+    ) -> Set[Statement]:
+        visited_pred = set()
+        visited_suc = set()
+        affecting_statements = set()
+
+        def visit_pred(statement):
+            # Avoid reprocessing the same statement
+            if statement in visited_pred:
+                return
+            visited_pred.add(statement)
+            affecting_statements.add(statement)
+
+            # Check for predecessors in the program dependence graph
+            if statement in self.program_dependence_graph:
+                for predecessor in self.program_dependence_graph.predecessors(
+                    statement
+                ):
+                    if predecessor not in affecting_statements:
+                        affecting_statements.add(predecessor)
+                    visit_pred(predecessor)
+
+        def visit_suc(statement):
+            # Avoid reprocessing the same statement
+            if statement in visited_suc:
+                return
+            visited_suc.add(statement)
+            affecting_statements.add(statement)
+
+            # Check for successors in the program dependence graph
+            if statement in self.program_dependence_graph:
+                for successor in self.program_dependence_graph.successors(statement):
+                    if successor not in affecting_statements:
+                        affecting_statements.add(successor)
+                    visit_suc(successor)
+
+        # Start the recursive visit from each statement
+        for statement in statements:
+            visit_pred(statement)
+            visit_suc(statement)
+
+        return affecting_statements
+
+    def get_boundary_blocks_for_statement(
+        self, statement: Statement
+    ) -> Set[BasicBlock]:
         """
         Get a set of boundary blocks for BasicBlock in which the given Statement is placed.
         :param statement: Statement for which the boundary blocks should to be obtained.
@@ -227,11 +285,16 @@ class ProgramGraphsManager:
         root = block.root
         if root is None:
             return result
-        predecessors = [predecessor for predecessor in self.control_dependence_graph.predecessors(root)]
+        predecessors = [
+            predecessor
+            for predecessor in self.control_dependence_graph.predecessors(root)
+        ]
         if len(predecessors) == 0:
             predecessors = [root]
         for root in predecessors:
-            for statement in networkx.algorithms.bfs_tree(self.control_dependence_graph, root):
+            for statement in networkx.algorithms.bfs_tree(
+                self.control_dependence_graph, root
+            ):
                 if statement == root:
                     continue
                 current_block = self.get_basic_block(statement)
@@ -263,7 +326,11 @@ class ProgramGraphsManager:
         inner_statements = self.get_statements_in_scope(statement)
         if inner_statements:
             result = set()
-            if statement.statement_type in {StatementType.SCOPE, StatementType.BRANCH, StatementType.LOOP}:
+            if statement.statement_type in {
+                StatementType.SCOPE,
+                StatementType.BRANCH,
+                StatementType.LOOP,
+            }:
                 result.add(statement.start_point.line_number)
             if statement.statement_type == StatementType.SCOPE:
                 result.add(statement.end_point.line_number)
@@ -273,7 +340,10 @@ class ProgramGraphsManager:
         else:
             result = {
                 number
-                for number in range(statement.start_point.line_number, statement.end_point.line_number + 1)
+                for number in range(
+                    statement.start_point.line_number,
+                    statement.end_point.line_number + 1,
+                )
             }
             self.__statement_line_numbers[statement] = result
         return result
@@ -288,7 +358,9 @@ class ProgramGraphsManager:
             self.__function_dependency = self.__build_function_dependency()
         return self.__function_dependency.get(statement, None)
 
-    def get_function_statement_by_range(self, start_point: Point, end_point: Point) -> Optional[Statement]:
+    def get_function_statement_by_range(
+        self, start_point: Point, end_point: Point
+    ) -> Optional[Statement]:
         """
         Get the minimal FUNCTION Statement in which the given range is placed.
         :param start_point: start Point of the given range.
@@ -322,7 +394,9 @@ class ProgramGraphsManager:
             self.__scope_dependency_backward = self.__build_statements_in_scope()
         return self.__scope_dependency_backward.get(scope, set())
 
-    def get_statements_in_range(self, start_point: Point = None, end_point: Point = None) -> Set[Statement]:
+    def get_statements_in_range(
+        self, start_point: Point = None, end_point: Point = None
+    ) -> Set[Statement]:
         """
         Get all the Statements in the given range.
         :param start_point: start Point of the given range.
@@ -330,13 +404,21 @@ class ProgramGraphsManager:
         :return: set of Statements contained in the given range.
         """
         statements = self.sorted_statements
-        start_statement_idx = 0 if start_point is None else self.__bisect_range_left(start_point, end_point)
-        end_statement_idx = len(statements) if end_point is None else self.__bisect_range_right(end_point, end_point)
+        start_statement_idx = (
+            0
+            if start_point is None
+            else self.__bisect_range_left(start_point, end_point)
+        )
+        end_statement_idx = (
+            len(statements)
+            if end_point is None
+            else self.__bisect_range_right(end_point, end_point)
+        )
         return set(
             statements[idx]
             for idx in range(start_statement_idx, end_statement_idx)
-            if (start_point is None or start_point <= statements[idx].start_point) and
-            (end_point is None or end_point >= statements[idx].end_point)
+            if (start_point is None or start_point <= statements[idx].start_point)
+            and (end_point is None or end_point >= statements[idx].end_point)
         )
 
     def get_exit_statements(self, statements: Set[Statement]) -> Set[Statement]:
@@ -352,19 +434,29 @@ class ProgramGraphsManager:
         for statement in statements:
             if statement not in self.control_dependence_graph.control_flow:
                 continue
-            flow_statements.update(self.control_dependence_graph.control_flow[statement])
+            flow_statements.update(
+                self.control_dependence_graph.control_flow[statement]
+            )
         visited = set()
         while flow_statements:
             level = set()
             for flow_statement in flow_statements:
                 if flow_statement in statements:
                     continue
-                if flow_statement.start_point < start_point or flow_statement.end_point > end_point:
+                if (
+                    flow_statement.start_point < start_point
+                    or flow_statement.end_point > end_point
+                ):
                     exit_statements.add(flow_statement)
                 elif flow_statement.statement_type == StatementType.EXIT:
                     exit_statements.add(flow_statement)
-                elif flow_statement not in visited and flow_statement in self.control_dependence_graph.control_flow:
-                    level.update(self.control_dependence_graph.control_flow[flow_statement])
+                elif (
+                    flow_statement not in visited
+                    and flow_statement in self.control_dependence_graph.control_flow
+                ):
+                    level.update(
+                        self.control_dependence_graph.control_flow[flow_statement]
+                    )
                     visited.add(flow_statement)
             flow_statements = level
         return exit_statements
@@ -376,25 +468,32 @@ class ProgramGraphsManager:
         :return: set of affecting Statements (may have VARIABLE or ASSIGNMENT type).
         """
         assignment_statements = [
-            statement for statement in statements
-            if
-            statement.statement_type == StatementType.ASSIGNMENT or
-            statement.statement_type == StatementType.VARIABLE
+            statement
+            for statement in statements
+            if statement.statement_type == StatementType.ASSIGNMENT
+            or statement.statement_type == StatementType.VARIABLE
         ]
         arg_statements_by_arg_name = self.__get_arg_statements_by_arg_name(statements)
         affecting_statements = set()
         for assignment_statement in assignment_statements:
             if assignment_statement not in self.data_dependence_graph:
                 continue
-            for affected_statement in self.data_dependence_graph.successors(assignment_statement):
-                if affected_statement not in statements or \
-                        affected_statement.end_point <= assignment_statement.end_point and \
-                        affected_statement in arg_statements_by_arg_name.get(assignment_statement.name, set()):
+            for affected_statement in self.data_dependence_graph.successors(
+                assignment_statement
+            ):
+                if (
+                    affected_statement not in statements
+                    or affected_statement.end_point <= assignment_statement.end_point
+                    and affected_statement
+                    in arg_statements_by_arg_name.get(assignment_statement.name, set())
+                ):
                     affecting_statements.add(assignment_statement)
                     break
         return affecting_statements
 
-    def get_changed_variables_statements(self, statements: Iterable[Statement]) -> Set[Statement]:
+    def get_changed_variables_statements(
+        self, statements: Iterable[Statement]
+    ) -> Set[Statement]:
         """
         Get VARIABLE Statements that represent variables changed in the given set of Statements.
         :param statements: set of Statements for which changed variables should to be obtained.
@@ -411,11 +510,16 @@ class ProgramGraphsManager:
                 if statement not in self.data_dependence_graph:
                     continue
                 for ancestor in networkx.ancestors(ddg, statement):
-                    if ancestor.statement_type == StatementType.VARIABLE and ancestor.name == statement.name:
+                    if (
+                        ancestor.statement_type == StatementType.VARIABLE
+                        and ancestor.name == statement.name
+                    ):
                         changed_variables.add(ancestor)
         return changed_variables
 
-    def get_involved_variables_statements(self, statements: Iterable[Statement]) -> Set[Statement]:
+    def get_involved_variables_statements(
+        self, statements: Iterable[Statement]
+    ) -> Set[Statement]:
         """
         Get VARIABLE Statements that represent variables involved (including usage) in the given set of Statements.
         :param statements: set of Statements for which involved variables should to be obtained.
@@ -430,7 +534,10 @@ class ProgramGraphsManager:
                 involved_variables.add(statement)
                 continue
             for ancestor in networkx.ancestors(ddg, statement):
-                if ancestor.statement_type == StatementType.VARIABLE and ancestor.name in statement.affected_by:
+                if (
+                    ancestor.statement_type == StatementType.VARIABLE
+                    and ancestor.name in statement.affected_by
+                ):
                     involved_variables.add(ancestor)
         return involved_variables
 
@@ -444,20 +551,32 @@ class ProgramGraphsManager:
     def __build_function_dependency(self) -> Dict[Statement, Statement]:
         function_dependency = {}
         for function_statement in sorted(
-                (s for s in self.control_dependence_graph if s.statement_type == StatementType.FUNCTION),
-                key=lambda x: (x.start_point, -x.end_point)):
-            for statement in networkx.traversal.dfs_tree(self.control_dependence_graph, function_statement):
+            (
+                s
+                for s in self.control_dependence_graph
+                if s.statement_type == StatementType.FUNCTION
+            ),
+            key=lambda x: (x.start_point, -x.end_point),
+        ):
+            for statement in networkx.traversal.dfs_tree(
+                self.control_dependence_graph, function_statement
+            ):
                 function_dependency[statement] = function_statement
         return function_dependency
 
     def __build_sorted_statements(self) -> List[Statement]:
-        return sorted(self.control_dependence_graph, key=lambda s: (s.start_point, -s.end_point))
+        return sorted(
+            self.control_dependence_graph, key=lambda s: (s.start_point, -s.end_point)
+        )
 
     def __build_general_statements(self) -> Set[Statement]:
         result = set()
         for scope in self.scope_statements:
             last_statement = None
-            for statement in sorted(self.get_statements_in_scope(scope), key=lambda s: (s.start_point, -s.end_point)):
+            for statement in sorted(
+                self.get_statements_in_scope(scope),
+                key=lambda s: (s.start_point, -s.end_point),
+            ):
                 if statement.start_point == statement.end_point:
                     continue
                 if not last_statement or statement.end_point > last_statement.end_point:
@@ -465,7 +584,9 @@ class ProgramGraphsManager:
                     result.add(statement)
         return result
 
-    def __build_reach_blocks(self, block: BasicBlock, visited_blocks: Set[BasicBlock] = None) -> Set[BasicBlock]:
+    def __build_reach_blocks(
+        self, block: BasicBlock, visited_blocks: Set[BasicBlock] = None
+    ) -> Set[BasicBlock]:
         if block in self.__reach_blocks:
             return self.__reach_blocks[block]
         if visited_blocks is None:
@@ -488,12 +609,16 @@ class ProgramGraphsManager:
             statements_in_scope[scope].add(statement)
         return statements_in_scope
 
-    def __get_arg_statements_by_arg_name(self, statements: Set[Statement]) -> Dict[str, Set[Statement]]:
+    def __get_arg_statements_by_arg_name(
+        self, statements: Set[Statement]
+    ) -> Dict[str, Set[Statement]]:
         arg_statements_by_arg_name = defaultdict(set)
         for statement in statements:
-            if statement in self.data_dependence_graph and \
-                    statement.statement_type != StatementType.ASSIGNMENT and \
-                    statement.statement_type != StatementType.VARIABLE:
+            if (
+                statement in self.data_dependence_graph
+                and statement.statement_type != StatementType.ASSIGNMENT
+                and statement.statement_type != StatementType.VARIABLE
+            ):
                 for predecessor in self.data_dependence_graph.predecessors(statement):
                     if predecessor not in statements:
                         arg_statements_by_arg_name[predecessor.name].add(statement)
